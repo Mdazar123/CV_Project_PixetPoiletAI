@@ -32,9 +32,11 @@ class Settings(BaseSettings):
     llm_model: str = "gpt-4o-mini"
     provider_timeout_seconds: float = 60.0
     low_memory: bool = Field(default_factory=lambda: bool(os.environ.get("RENDER")))
-    low_memory_image_side: int = 2048
-    low_memory_pixels: int = 4_000_000
-    low_memory_stored_images: int = 3
+    # Render's free 512 MB instance needs enough headroom for one vision model,
+    # one OCR model, and the decoded source plus response buffers.
+    low_memory_image_side: int = 1280
+    low_memory_pixels: int = 1_638_400
+    low_memory_stored_images: int = 1
 
     @property
     def image_side_limit(self) -> int:
