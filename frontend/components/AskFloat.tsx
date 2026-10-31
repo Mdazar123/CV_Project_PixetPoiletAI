@@ -68,9 +68,11 @@ export function AskFloat({ onClose }: AskFloatProps) {
     if (!rect) return;
     const offsetX = event.clientX - rect.left;
     const offsetY = event.clientY - rect.top;
+    const startWidth = rect.width;
+    const startHeight = rect.height;
     function move(ev: PointerEvent) {
-      const width = panelRef.current?.offsetWidth ?? rect.width;
-      const height = panelRef.current?.offsetHeight ?? rect.height;
+      const width = panelRef.current?.offsetWidth ?? startWidth;
+      const height = panelRef.current?.offsetHeight ?? startHeight;
       setPos({
         x: clamp(ev.clientX - offsetX, 8, window.innerWidth - width - 8),
         y: clamp(ev.clientY - offsetY, 8, window.innerHeight - height - 8),
