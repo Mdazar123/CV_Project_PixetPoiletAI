@@ -5,6 +5,7 @@ __pycache__/
 .env
 .env.local
 backend/models/*.tflite
+backend/vendor/
 node_modules/
 .next/
 frontend/.next/

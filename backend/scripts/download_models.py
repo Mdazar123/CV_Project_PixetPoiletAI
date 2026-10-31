@@ -28,6 +28,12 @@ def main() -> None:
     MODEL_DIR.mkdir(parents=True, exist_ok=True)
     for name, url in MODELS.items():
         download(name, url)
+    script_dir = Path(__file__).resolve().parent
+    if str(script_dir) not in sys.path:
+        sys.path.insert(0, str(script_dir))
+    from download_system_libs import ensure_graphics_libs
+
+    ensure_graphics_libs()
 
 
 if __name__ == "__main__":

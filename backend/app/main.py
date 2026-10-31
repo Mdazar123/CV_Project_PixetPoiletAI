@@ -1,3 +1,7 @@
+from app.core.native_libs import prepare_graphics_libraries
+
+prepare_graphics_libraries()
+
 import logging
 import re
 import uuid
