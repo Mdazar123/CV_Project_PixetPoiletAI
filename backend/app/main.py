@@ -1,5 +1,6 @@
-from app.core.native_libs import prepare_graphics_libraries
+from app.core.native_libs import limit_thread_pools, prepare_graphics_libraries
 
+limit_thread_pools()
 prepare_graphics_libraries()
 
 import logging

@@ -5,6 +5,7 @@ import time
 import cv2
 import numpy as np
 
+from app.core import model_slots
 from app.core.config import settings
 from app.core.errors import InferenceFailure, ModelUnavailable
 from app.utils.images import as_bgr
@@ -46,10 +47,24 @@ def _unavailable_reason() -> str | None:
     return None
 
 
+def release() -> None:
+    global _detector
+    with _lock:
+        if _detector is None:
+            return
+        try:
+            _detector.close()
+        except Exception:
+            logger.warning("detector close failed", exc_info=True)
+        _detector = None
+
+
 def _load_detector():
     global _detector
     if _detector is not None:
         return _detector, None
+    if settings.low_memory:
+        model_slots.release_others("detector")
     with _lock:
         if _detector is not None:
             return _detector, None
@@ -68,6 +83,9 @@ def _load_detector():
             logger.exception("detector load failed")
             raise InferenceFailure("The detection model could not be loaded. No detections were produced.") from exc
         return _detector, (time.perf_counter() - started) * 1000
+
+
+model_slots.register("detector", release)
 
 
 def detect(image: np.ndarray, confidence: float, max_results: int) -> dict:

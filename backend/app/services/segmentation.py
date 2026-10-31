@@ -6,6 +6,7 @@ import cv2
 import numpy as np
 from pydantic import ValidationError
 
+from app.core import model_slots
 from app.core.config import settings
 from app.core.errors import InferenceFailure, InvalidParameters, ModelUnavailable
 from app.schemas.cv import DeepLabParams, GrabCutParams
@@ -169,10 +170,24 @@ def _grabcut(image: np.ndarray, params: GrabCutParams) -> dict:
     }
 
 
+def release() -> None:
+    global _segmenter
+    with _lock:
+        if _segmenter is None:
+            return
+        try:
+            _segmenter.close()
+        except Exception:
+            logger.warning("segmenter close failed", exc_info=True)
+        _segmenter = None
+
+
 def _load_segmenter():
     global _segmenter
     if _segmenter is not None:
         return _segmenter, None
+    if settings.low_memory:
+        model_slots.release_others("segmenter")
     with _lock:
         if _segmenter is not None:
             return _segmenter, None
@@ -190,6 +205,9 @@ def _load_segmenter():
             logger.exception("segmenter load failed")
             raise InferenceFailure("The segmentation model could not be loaded. No mask was produced.") from exc
         return _segmenter, (time.perf_counter() - started) * 1000
+
+
+model_slots.register("segmenter", release)
 
 
 def _deeplab(image: np.ndarray) -> dict:

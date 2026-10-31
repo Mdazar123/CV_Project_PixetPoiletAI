@@ -1,5 +1,7 @@
+import os
 from pathlib import Path
 
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 BACKEND_DIR = Path(__file__).resolve().parents[2]
@@ -29,6 +31,22 @@ class Settings(BaseSettings):
     vlm_model: str = "gpt-4o-mini"
     llm_model: str = "gpt-4o-mini"
     provider_timeout_seconds: float = 60.0
+    low_memory: bool = Field(default_factory=lambda: bool(os.environ.get("RENDER")))
+    low_memory_image_side: int = 2048
+    low_memory_pixels: int = 4_000_000
+    low_memory_stored_images: int = 3
+
+    @property
+    def image_side_limit(self) -> int:
+        return min(self.max_image_side, self.low_memory_image_side) if self.low_memory else self.max_image_side
+
+    @property
+    def pixel_limit(self) -> int:
+        return min(self.max_pixels, self.low_memory_pixels) if self.low_memory else self.max_pixels
+
+    @property
+    def stored_image_limit(self) -> int:
+        return min(self.max_stored_images, self.low_memory_stored_images) if self.low_memory else self.max_stored_images
 
     @property
     def cors_origin_list(self) -> list[str]:

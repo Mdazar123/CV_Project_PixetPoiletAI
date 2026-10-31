@@ -3,6 +3,8 @@ import threading
 
 import numpy as np
 
+from app.core import model_slots
+from app.core.config import settings
 from app.core.errors import InferenceFailure, ModelUnavailable
 from app.utils.images import as_bgr
 
@@ -55,15 +57,29 @@ def extract(image: np.ndarray) -> dict:
     }
 
 
+def release() -> None:
+    global _engine
+    with _lock:
+        _engine = None
+
+
+def _engine_options() -> dict:
+    if not settings.low_memory:
+        return {}
+    return {"intra_op_num_threads": 1, "inter_op_num_threads": 1}
+
+
 def _rapidocr(image: np.ndarray) -> tuple[list[dict], float]:
     import time
 
     from rapidocr_onnxruntime import RapidOCR
 
     global _engine
+    if _engine is None and settings.low_memory:
+        model_slots.release_others("ocr")
     with _lock:
         if _engine is None:
-            _engine = RapidOCR()
+            _engine = RapidOCR(**_engine_options())
         engine = _engine
     started = time.perf_counter()
     try:
@@ -95,6 +111,9 @@ def _rapidocr(image: np.ndarray) -> tuple[list[dict], float]:
             }
         )
     return regions, inference_ms
+
+
+model_slots.register("ocr", release)
 
 
 def _tesseract(image: np.ndarray) -> tuple[list[dict], float]:

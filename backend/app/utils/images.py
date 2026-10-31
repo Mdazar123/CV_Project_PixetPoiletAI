@@ -7,6 +7,9 @@ import numpy as np
 from PIL import Image, ImageOps, UnidentifiedImageError
 
 from app.core.config import settings
+
+if settings.low_memory:
+    cv2.setNumThreads(1)
 from app.core.errors import (
     FileTooLarge,
     ImageDecodeError,
@@ -78,12 +81,12 @@ def _check_dimensions(image: np.ndarray) -> None:
     if width < 2 or height < 2:
         raise ImageDecodeError("The image is too small to analyze.")
     if (
-        width > settings.max_image_side
-        or height > settings.max_image_side
-        or width * height > settings.max_pixels
+        width > settings.image_side_limit
+        or height > settings.image_side_limit
+        or width * height > settings.pixel_limit
     ):
         raise ImageTooLarge(
-            f"Images must be at most {settings.max_image_side} pixels on a side."
+            f"Images must be at most {settings.image_side_limit} pixels on a side."
         )
 
 

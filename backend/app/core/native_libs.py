@@ -1,10 +1,25 @@
-"""Make MediaPipe's Linux graphics libraries visible before the model loads."""
+"""Prepare the process before any vision library is imported."""
 
 import os
 import sys
 from pathlib import Path
 
 LIB_DIR = Path(__file__).resolve().parents[2] / "vendor" / "libs"
+THREAD_VARS = ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS", "NUMEXPR_NUM_THREADS")
+
+
+def limit_thread_pools() -> None:
+    """Size native thread pools for the CPU share we have, not the host's cores.
+
+    Render's small instances report every host core, so OpenCV, XNNPACK, and
+    ONNX Runtime would each allocate per-thread buffers they can never use.
+    """
+    from app.core.config import settings
+
+    if not settings.low_memory:
+        return
+    for name in THREAD_VARS:
+        os.environ.setdefault(name, "1")
 
 
 def prepare_graphics_libraries() -> None:

@@ -44,7 +44,7 @@ class ImageStore:
         )
         with self._lock:
             self._purge_locked(time.time())
-            overflow = len(self._items) + 1 - settings.max_stored_images
+            overflow = len(self._items) + 1 - settings.stored_image_limit
             if overflow > 0:
                 ordered = sorted(self._items.values(), key=lambda item: item.created_at)
                 for stale in ordered[:overflow]:
