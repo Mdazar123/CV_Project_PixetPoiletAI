@@ -1,0 +1,5 @@
+# Image-text similarity. This installs PyTorch.
+open_clip_torch>=2.24.0
+
+# Alternative OCR engine. Requires the Tesseract program on PATH.
+pytesseract>=0.3.13

@@ -1,0 +1,14 @@
+.venv/
+__pycache__/
+.pytest_cache/
+*.pyc
+.env
+.env.local
+backend/models/*.tflite
+node_modules/
+.next/
+frontend/.next/
+dist/
+*.pt
+.DS_Store
+Thumbs.db

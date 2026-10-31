@@ -1,0 +1,713 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>PixelPilot AI — Project Guide</title>
+<style>
+  @page {
+    size: A4;
+    margin: 16mm 15mm 18mm 15mm;
+    @bottom-center {
+      content: "PixelPilot AI  ·  " counter(page);
+      font-family: "Segoe UI", sans-serif;
+      font-size: 9pt;
+      color: #64748b;
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0;
+    padding: 0;
+    color: #1e293b;
+    font-family: "Segoe UI", Calibri, sans-serif;
+    font-size: 11pt;
+    line-height: 1.45;
+  }
+  h1, h2, h3 { line-height: 1.2; color: #0f172a; }
+  h1 { font-size: 20pt; margin: 0 0 8px; page-break-before: always; }
+  h1.first { page-break-before: avoid; }
+  h2 { font-size: 14pt; margin: 18px 0 6px; color: #0e7490; }
+  h3 { font-size: 12pt; margin: 14px 0 4px; }
+  p { margin: 0 0 8px; }
+  ul, ol { margin: 4px 0 10px; padding-left: 18px; }
+  li { margin: 0 0 4px; }
+  code, .mono {
+    font-family: Consolas, "Cascadia Mono", monospace;
+    font-size: 9.5pt;
+  }
+  code { background: #f1f5f9; padding: 0 3px; border-radius: 3px; }
+  table { width: 100%; border-collapse: collapse; margin: 8px 0 14px; page-break-inside: avoid; }
+  th, td { border: 1px solid #cbd5e1; padding: 5px 7px; vertical-align: top; text-align: left; font-size: 9.5pt; }
+  th { background: #ecfeff; color: #155e75; font-weight: 650; }
+  .cover {
+    page-break-after: always;
+    min-height: 250mm;
+    padding: 28mm 8mm 0;
+  }
+  .kicker {
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: #0e7490;
+    font-size: 10pt;
+    font-weight: 700;
+    margin-bottom: 10px;
+  }
+  .cover h1 {
+    font-size: 34pt;
+    margin: 0 0 8px;
+    page-break-before: avoid;
+  }
+  .cover .sub { font-size: 14pt; color: #334155; margin-bottom: 22px; }
+  .rule { height: 4px; width: 72px; background: #22d3ee; margin: 0 0 18px; }
+  .note, .callout {
+    background: #f8fafc;
+    border-left: 4px solid #22d3ee;
+    padding: 8px 12px;
+    margin: 10px 0 14px;
+    page-break-inside: avoid;
+  }
+  .callout { border-left-color: #a78bfa; background: #faf8ff; }
+  .flow {
+    display: flex;
+    gap: 8px;
+    margin: 10px 0 14px;
+  }
+  .flow div {
+    flex: 1;
+    border: 1px solid #99f6e4;
+    background: #f0fdfa;
+    border-radius: 8px;
+    padding: 8px;
+    font-size: 9.5pt;
+  }
+  .flow strong { display: block; color: #0f766e; margin-bottom: 3px; }
+  .small { color: #475569; font-size: 10pt; }
+  figure.diagram {
+    margin: 12px 0 16px;
+    page-break-inside: avoid;
+  }
+  figure.diagram svg {
+    display: block;
+    width: 100%;
+    height: auto;
+    background: #f8fafc;
+    border: 1px solid #cbd5e1;
+    border-radius: 8px;
+  }
+  figcaption {
+    margin-top: 4px;
+    color: #475569;
+    font-size: 9pt;
+  }
+</style>
+</head>
+<body>
+
+<section class="cover">
+  <div class="kicker">Project guide</div>
+  <h1>PixelPilot AI</h1>
+  <p class="sub">A computer-vision workbench: upload one image, measure it, and keep every answer tied to a real result.</p>
+  <div class="rule"></div>
+  <p>PixelPilot AI is a full-stack image-understanding application. The browser is a workbench. A Python API checks the file, stores the image in memory, and runs classical OpenCV operations, object detection, semantic segmentation, OCR, and an optional vision-language question. A report is assembled only from analyses the server already stored.</p>
+  <p>This document explains each feature, the HTTP API, how Ask PixelPilot works, and which computer-vision ideas the project actually demonstrates. It does not claim a leaderboard score. Precision, recall, F1, IoU, and mAP are not measured here, because the project does not include a labeled evaluation set.</p>
+  <p class="small">Stack: Next.js and React on the front end. FastAPI, Pydantic, OpenCV, MediaPipe, and RapidOCR on the API. Optional language answers go through an OpenAI-compatible provider, currently Groq.</p>
+</section>
+
+<h1 class="first">1. What the project is</h1>
+<p>PixelPilot is a single-image workbench. You upload a JPEG, PNG, or WebP file, then move through modes: Overview, Image Lab, Detection, Segmentation, OCR, Similarity, Report, and Compare. Ask PixelPilot opens as a floating chat instead of replacing the picture.</p>
+<p>The design choice that matters for computer vision is honesty. A detector that finds nothing still returns a completed run with zero boxes. OCR that finds no text returns an empty region list. A vision-language answer is labeled unverified. A report cannot be given a detection the server did not produce. The client schema rejects extra fields, so a caller cannot inject a fake object into the report body.</p>
+
+<h2>What a reviewer can see</h2>
+<ul>
+  <li>An image is an array. Color images are stored as BGR for OpenCV, and the pixel readout also shows RGB.</li>
+  <li>EXIF orientation is applied before analysis, so a click on the preview matches the stored coordinates.</li>
+  <li>Classical operations, detection, segmentation, and OCR are different tasks with different outputs.</li>
+  <li>Boxes use absolute pixels. The right and bottom edges, <code>x2</code> and <code>y2</code>, are exclusive.</li>
+  <li>Model limits are stated: EfficientDet Lite0 misses small objects, DeepLabV3 uses the Pascal VOC class list and does not separate instances, GrabCut is foreground separation inside a rectangle.</li>
+  <li>Server time is measured. Model calls also report inference time, and model-load time when the weights are loaded on that request.</li>
+  <li>A language model is optional and is not treated as a measurement.</li>
+</ul>
+<div class="note">This is applied computer vision and full-stack integration. It is not a research paper and it does not train a new network. The value is that each stage is real, inspectable, and separated from the next stage.</div>
+
+<h1>2. How the system is built</h1>
+<p>The Next.js app never runs the models. It sends the file or an image id to FastAPI and draws whatever the API returns. Routes stay separate from the vision code: HTTP handlers live under <code>backend/app/api/routes</code>, and OpenCV or model code lives under <code>backend/app/services</code>.</p>
+
+<figure class="diagram">
+  <svg viewBox="0 0 720 250" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Architecture of PixelPilot">
+    <rect x="16" y="28" width="160" height="190" rx="10" fill="#ecfeff" stroke="#0e7490"/>
+    <text x="96" y="52" text-anchor="middle" font-size="13" font-weight="700" fill="#0f172a">Browser</text>
+    <text x="96" y="74" text-anchor="middle" font-size="11" fill="#334155">Next.js workbench</text>
+    <text x="96" y="98" text-anchor="middle" font-size="11" fill="#334155">Upload and modes</text>
+    <text x="96" y="118" text-anchor="middle" font-size="11" fill="#334155">Boxes and masks</text>
+    <text x="96" y="138" text-anchor="middle" font-size="11" fill="#334155">Compare and report</text>
+    <text x="96" y="166" text-anchor="middle" font-size="11" fill="#6d28d9">Ask PixelPilot chat</text>
+    <path d="M176 110 H228" stroke="#0e7490" stroke-width="2" marker-end="url(#arrow)"/>
+    <rect x="228" y="28" width="180" height="190" rx="10" fill="#f8fafc" stroke="#334155"/>
+    <text x="318" y="52" text-anchor="middle" font-size="13" font-weight="700" fill="#0f172a">FastAPI</text>
+    <text x="318" y="78" text-anchor="middle" font-size="11" fill="#334155">Validate the file</text>
+    <text x="318" y="98" text-anchor="middle" font-size="11" fill="#334155">One image id</text>
+    <text x="318" y="118" text-anchor="middle" font-size="11" fill="#334155">Memory store</text>
+    <text x="318" y="146" text-anchor="middle" font-size="11" fill="#334155">JSON + timing</text>
+    <text x="318" y="166" text-anchor="middle" font-size="11" fill="#334155">or a clear error</text>
+    <path d="M408 80 H460" stroke="#0e7490" stroke-width="2"/>
+    <path d="M408 160 H460" stroke="#7c3aed" stroke-width="2"/>
+    <rect x="460" y="28" width="240" height="88" rx="10" fill="#f0fdfa" stroke="#0f766e"/>
+    <text x="580" y="52" text-anchor="middle" font-size="13" font-weight="700" fill="#0f172a">Local vision</text>
+    <text x="580" y="76" text-anchor="middle" font-size="11" fill="#334155">OpenCV · EfficientDet · DeepLab</text>
+    <text x="580" y="96" text-anchor="middle" font-size="11" fill="#334155">GrabCut · RapidOCR</text>
+    <rect x="460" y="132" width="240" height="86" rx="10" fill="#f5f3ff" stroke="#7c3aed"/>
+    <text x="580" y="156" text-anchor="middle" font-size="13" font-weight="700" fill="#0f172a">Hosted, optional</text>
+    <text x="580" y="180" text-anchor="middle" font-size="11" fill="#334155">Ask: image goes to Groq</text>
+    <text x="580" y="200" text-anchor="middle" font-size="11" fill="#334155">Report narrative: JSON only</text>
+    <defs>
+      <marker id="arrow" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+        <path d="M0 0 L6 3 L0 6 Z" fill="#0e7490"/>
+      </marker>
+    </defs>
+  </svg>
+  <figcaption>Figure 1. The browser never runs the models. Local vision stays on the API machine. Only Ask PixelPilot and the optional report narrative call Groq.</figcaption>
+</figure>
+
+<p>Uploaded images live in the API process memory. They are not written to disk. Each image expires after 30 minutes, and the process keeps at most eight images. The API should run as one Uvicorn worker. A second worker would not see the same image ids.</p>
+<p>Model files for detection and DeepLab sit in <code>backend/models</code> and are downloaded locally. They are not committed as the source of truth; a new machine runs <code>scripts/download_models.py</code>.</p>
+
+<h2>Limits enforced before analysis</h2>
+<table>
+  <tr><th>Limit</th><th>Value</th><th>Why it exists</th></tr>
+  <tr><td>Formats</td><td>JPEG, PNG, WebP</td><td>Extension and file bytes must agree. A renamed file is rejected.</td></tr>
+  <tr><td>Upload size</td><td>10 MB</td><td>Stops an oversized request before decode.</td></tr>
+  <tr><td>Longest side</td><td>4096 pixels</td><td>Keeps arrays inside a known bound.</td></tr>
+  <tr><td>Pixel count</td><td>16 million</td><td>A wide, short image can still be too large.</td></tr>
+  <tr><td>Question length</td><td>1000 characters</td><td>Ask PixelPilot rejects an empty or oversized question.</td></tr>
+</table>
+
+<h1>3. The path of one image</h1>
+<ol>
+  <li>The browser sends the file to <code>POST /api/v1/images/inspect</code>.</li>
+  <li>The API checks the extension, the file signature, the size, and the decoded dimensions. Pillow applies EXIF orientation. The array is stored as BGR.</li>
+  <li>The response includes an id such as <code>img_</code> plus 16 hex characters, plus width, height, channels, color space, and processing time.</li>
+  <li>Later calls send that id. The original array is not modified by Image Lab. Each operation returns a new image.</li>
+  <li>Detection, segmentation, OCR, and a vision question are saved on that image record. The report reads those stored records. It does not re-read a JSON body supplied by the browser as if it were a measurement.</li>
+</ol>
+<figure class="diagram">
+  <svg viewBox="0 0 720 168" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Path of one uploaded image">
+    <g font-size="11" fill="#0f172a" text-anchor="middle">
+      <rect x="8" y="36" width="100" height="64" rx="8" fill="#ecfeff" stroke="#0e7490"/>
+      <text x="58" y="64">File</text>
+      <text x="58" y="82" font-size="10" fill="#475569">JPEG PNG WebP</text>
+      <rect x="132" y="36" width="110" height="64" rx="8" fill="#f8fafc" stroke="#334155"/>
+      <text x="187" y="64">Checks</text>
+      <text x="187" y="82" font-size="10" fill="#475569">type, size, pixels</text>
+      <rect x="266" y="36" width="120" height="64" rx="8" fill="#f8fafc" stroke="#334155"/>
+      <text x="326" y="64">Decode</text>
+      <text x="326" y="82" font-size="10" fill="#475569">EXIF, then BGR</text>
+      <rect x="410" y="36" width="120" height="64" rx="8" fill="#ecfeff" stroke="#0e7490"/>
+      <text x="470" y="64">Image id</text>
+      <text x="470" y="82" font-size="10" fill="#475569">kept in memory</text>
+      <rect x="554" y="18" width="154" height="40" rx="8" fill="#f0fdfa" stroke="#0f766e"/>
+      <text x="631" y="42">Lab, detect, OCR</text>
+      <rect x="554" y="70" width="154" height="40" rx="8" fill="#f5f3ff" stroke="#7c3aed"/>
+      <text x="631" y="94">Ask or report</text>
+    </g>
+    <path d="M108 68 H132 M242 68 H266 M386 68 H410 M530 48 H554 M530 90 H554" stroke="#0e7490" stroke-width="1.6" fill="none"/>
+    <text x="360" y="150" text-anchor="middle" font-size="11" fill="#475569">The original array stays unchanged. Each tool returns a new result tied to the same image id.</text>
+  </svg>
+  <figcaption>Figure 2. One upload creates one image id. Later tools reuse that id instead of uploading the file again.</figcaption>
+</figure>
+<p>Every successful and failed response can be traced with <code>X-Request-ID</code>. Failures use one shape:</p>
+<p class="mono">{ "error": { "code": "MODEL_UNAVAILABLE", "message": "...", "request_id": "..." } }</p>
+<p>Common codes are <code>UNSUPPORTED_IMAGE</code>, <code>FILE_TOO_LARGE</code>, <code>IMAGE_TOO_LARGE</code>, <code>IMAGE_DECODE_FAILED</code>, <code>IMAGE_NOT_FOUND</code>, <code>INVALID_PARAMETERS</code>, <code>INVALID_REQUEST</code>, <code>MODEL_UNAVAILABLE</code>, <code>PROVIDER_TIMEOUT</code>, <code>PROVIDER_RATE_LIMIT</code>, <code>INFERENCE_FAILURE</code>, and <code>INTERNAL_ERROR</code>.</p>
+
+<h1>4. Features</h1>
+<figure class="diagram">
+  <svg viewBox="0 0 720 210" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="What each vision task returns">
+    <g font-size="12" font-weight="700" fill="#0f172a">
+      <rect x="12" y="16" width="132" height="150" rx="8" fill="#f8fafc" stroke="#334155"/>
+      <text x="78" y="40" text-anchor="middle">Image Lab</text>
+      <rect x="156" y="16" width="132" height="150" rx="8" fill="#ecfeff" stroke="#0e7490"/>
+      <text x="222" y="40" text-anchor="middle">Detection</text>
+      <rect x="300" y="16" width="132" height="150" rx="8" fill="#f0fdfa" stroke="#0f766e"/>
+      <text x="366" y="40" text-anchor="middle">GrabCut</text>
+      <rect x="444" y="16" width="132" height="150" rx="8" fill="#f0fdfa" stroke="#0f766e"/>
+      <text x="510" y="40" text-anchor="middle">DeepLab</text>
+      <rect x="588" y="16" width="120" height="150" rx="8" fill="#f5f3ff" stroke="#7c3aed"/>
+      <text x="648" y="40" text-anchor="middle">OCR / Ask</text>
+    </g>
+    <g font-size="11" fill="#334155" text-anchor="middle">
+      <text x="78" y="70">A new picture</text>
+      <text x="78" y="90">from filters</text>
+      <text x="78" y="122">No class label</text>
+      <text x="222" y="70">A few boxes</text>
+      <text x="222" y="90">and class names</text>
+      <text x="222" y="122">Not every pixel</text>
+      <text x="366" y="70">Foreground</text>
+      <text x="366" y="90">inside a rectangle</text>
+      <text x="366" y="122">No class names</text>
+      <text x="510" y="70">A class</text>
+      <text x="510" y="90">on every pixel</text>
+      <text x="510" y="122">Pascal VOC only</text>
+      <text x="648" y="70">OCR: text boxes</text>
+      <text x="648" y="96">Ask: a sentence</text>
+      <text x="648" y="128">Ask is unverified</text>
+    </g>
+  </svg>
+  <figcaption>Figure 3. The modes look related in the sidebar, but they answer different questions and must not be mixed.</figcaption>
+</figure>
+
+<h2>4.1 Overview and pixel readout</h2>
+<p>Overview is the image itself: file name, dimensions, byte size, color space, and dtype. Clicking the preview calls <code>POST /api/v1/images/{image_id}/pixels</code> with an x and y. For a color image the response includes the OpenCV BGR triple and the same pixel in RGB display order. A one-channel image returns gray. This is the simplest proof that the preview and the stored array share a coordinate system.</p>
+
+<h2>4.2 Image Lab</h2>
+<p>Image Lab runs classical operations on a copy of the stored original. The original stays available, and the screen can switch back to it. Each call is <code>POST /api/v1/cv/preprocess</code> with an operation name and a JSON parameter object. Unknown parameters are rejected.</p>
+<table>
+  <tr><th>Operation</th><th>What it does</th></tr>
+  <tr><td>Grayscale</td><td>Collapses color channels so later threshold and edge steps have one intensity per pixel.</td></tr>
+  <tr><td>Gaussian blur</td><td>Smooths noise with an odd kernel from 1 to 31. Sigma may be 0, which lets OpenCV derive it.</td></tr>
+  <tr><td>Threshold</td><td>Global threshold, or adaptive mean or Gaussian threshold, for a binary image.</td></tr>
+  <tr><td>Canny</td><td>Edge map from a low and a high threshold. The low value must be below the high value. Aperture is 3, 5, or 7.</td></tr>
+  <tr><td>Contours</td><td>Connected boundaries after a threshold or a Canny step, with a minimum area.</td></tr>
+  <tr><td>Erosion, dilation, opening, closing</td><td>Morphology with a rectangle or ellipse kernel and 1 to 10 iterations. Opening removes small bright specks. Closing fills small dark gaps.</td></tr>
+  <tr><td>Resize, rotate, crop, flip</td><td>Geometry. Crop is an explicit rectangle. Flip is horizontal, vertical, or both.</td></tr>
+</table>
+<p>These steps are the part of the project that shows the classical pipeline: intensity, smoothing, thresholding, edges, morphology, and geometry, each with parameters a reviewer can change and a result image they can see.</p>
+
+<h2>4.3 Object detection</h2>
+<p>Detection uses MediaPipe’s EfficientDet Lite0, integer 8-bit weights, on CPU. The task is object detection: a class label, a confidence, and a box. It is not segmentation and it is not OCR.</p>
+<figure class="diagram">
+  <svg viewBox="0 0 720 200" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Absolute pixel box with an exclusive far edge">
+    <rect x="24" y="20" width="360" height="160" fill="#e2e8f0" stroke="#64748b"/>
+    <text x="40" y="40" font-size="11" fill="#334155">image origin (0, 0)</text>
+    <path d="M40 150 H250" stroke="#0e7490" stroke-width="1.4" marker-end="url(#ax)"/>
+    <path d="M40 150 V50" stroke="#0e7490" stroke-width="1.4" marker-end="url(#ax)"/>
+    <text x="230" y="168" font-size="11" fill="#0e7490">x increases right</text>
+    <text x="48" y="64" font-size="11" fill="#0e7490">y increases down</text>
+    <rect x="110" y="70" width="140" height="70" fill="#cffafe" fill-opacity="0.8" stroke="#0e7490" stroke-width="2"/>
+    <circle cx="110" cy="70" r="3.5" fill="#0f172a"/>
+    <circle cx="250" cy="140" r="3.5" fill="#be123c"/>
+    <text x="118" y="64" font-size="12" fill="#0f172a">(x1, y1) included</text>
+    <text x="430" y="78" font-size="13" font-weight="700" fill="#0f172a">Box width</text>
+    <text x="430" y="100" font-size="12" fill="#334155">x2 − x1</text>
+    <text x="430" y="128" font-size="13" font-weight="700" fill="#0f172a">Box height</text>
+    <text x="430" y="150" font-size="12" fill="#334155">y2 − y1</text>
+    <text x="430" y="176" font-size="11" fill="#be123c">(x2, y2) is outside the box</text>
+    <defs>
+      <marker id="ax" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+        <path d="M0 0 L6 3 L0 6 Z" fill="#0e7490"/>
+      </marker>
+    </defs>
+  </svg>
+  <figcaption>Figure 4. Boxes use absolute pixels. The top-left corner is inside the box. The bottom-right corner is the first pixel outside it.</figcaption>
+</figure>
+<ul>
+  <li>The browser sends a confidence cutoff and a maximum box count to <code>POST /api/v1/cv/detect</code>.</li>
+  <li>The service converts BGR to RGB because MediaPipe expects RGB, runs the detector, then clips every box to the image.</li>
+  <li>A box with no area is dropped. <code>x2</code> and <code>y2</code> are exclusive edges, so width is <code>x2 - x1</code>.</li>
+  <li>Zero boxes is a successful response. The interface shows <code>0</code> and the words “Run finished with no boxes.”</li>
+  <li>The screen can draw boxes on the original or show the rendered label image.</li>
+</ul>
+<div class="note">EfficientDet Lite0 is a small model. It misses small objects and can return nothing on a synthetic picture. The project records that limit instead of swapping in a made-up score. Average confidence is the mean of the scores that were returned, not a dataset accuracy.</div>
+
+<h2>4.4 Segmentation</h2>
+<p>Two methods share <code>POST /api/v1/cv/segment</code>. They answer different questions.</p>
+<figure class="diagram">
+  <svg viewBox="0 0 720 170" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="GrabCut rectangle versus DeepLab pixel classes">
+    <rect x="20" y="16" width="320" height="140" rx="8" fill="#f8fafc" stroke="#cbd5e1"/>
+    <text x="180" y="40" text-anchor="middle" font-size="13" font-weight="700" fill="#0f172a">GrabCut</text>
+    <rect x="70" y="58" width="180" height="76" fill="#e2e8f0" stroke="#64748b"/>
+    <rect x="108" y="74" width="100" height="46" fill="none" stroke="#0e7490" stroke-dasharray="4 3" stroke-width="2"/>
+    <text x="180" y="150" text-anchor="middle" font-size="11" fill="#334155">User draws the search rectangle</text>
+    <rect x="370" y="16" width="330" height="140" rx="8" fill="#f8fafc" stroke="#cbd5e1"/>
+    <text x="535" y="40" text-anchor="middle" font-size="13" font-weight="700" fill="#0f172a">DeepLab</text>
+    <g>
+      <rect x="430" y="58" width="22" height="22" fill="#cbd5e1"/><rect x="452" y="58" width="22" height="22" fill="#99f6e4"/>
+      <rect x="474" y="58" width="22" height="22" fill="#67e8f9"/><rect x="496" y="58" width="22" height="22" fill="#a5f3fc"/>
+      <rect x="430" y="80" width="22" height="22" fill="#99f6e4"/><rect x="452" y="80" width="22" height="22" fill="#22d3ee"/>
+      <rect x="474" y="80" width="22" height="22" fill="#22d3ee"/><rect x="496" y="80" width="22" height="22" fill="#99f6e4"/>
+      <rect x="430" y="102" width="22" height="22" fill="#cbd5e1"/><rect x="452" y="102" width="22" height="22" fill="#a5f3fc"/>
+      <rect x="474" y="102" width="22" height="22" fill="#99f6e4"/><rect x="496" y="102" width="22" height="22" fill="#cbd5e1"/>
+    </g>
+    <text x="560" y="78" font-size="11" fill="#334155">each pixel gets</text>
+    <text x="560" y="96" font-size="11" fill="#334155">one class name</text>
+    <text x="560" y="122" font-size="11" fill="#334155">same class shares</text>
+    <text x="560" y="140" font-size="11" fill="#334155">one color</text>
+  </svg>
+  <figcaption>Figure 5. GrabCut looks for foreground inside a rectangle. DeepLab labels every pixel and does not separate two objects of the same class.</figcaption>
+</figure>
+<h3>GrabCut</h3>
+<p>GrabCut is classical foreground separation. The user supplies a rectangle and 1 to 5 iterations. Pixels inside that rectangle are the region the algorithm tries to separate from the background. It does not name Pascal VOC classes. The response includes a mask, an overlay, and a foreground pixel count. If the rectangle is omitted, the service uses a default inset rectangle.</p>
+<h3>DeepLabV3</h3>
+<p>DeepLabV3 is semantic segmentation through MediaPipe. Every pixel gets one label from the 21 Pascal VOC classes: background, aeroplane, bicycle, bird, boat, bottle, bus, car, cat, chair, cow, dining table, dog, horse, motorbike, person, potted plant, sheep, sofa, train, and tv. Two people become the same class. The model does not return instances, and it does not invent classes outside that list. The screen can show the color overlay or the class mask.</p>
+
+<h2>4.5 OCR</h2>
+<p><code>POST /api/v1/cv/ocr</code> runs RapidOCR, an ONNX text detector and recognizer. The response has a region count, the joined text, and one record per region: the string, an optional confidence, and a box. A page with no readable text returns a valid empty list. The regions are drawn on the original image in the OCR mode and in Compare.</p>
+<p>OCR and Ask PixelPilot are deliberately separate. OCR is the text engine’s output. Ask PixelPilot is a generated description. They can disagree, and the Compare screen has a tag for that case.</p>
+
+<h2>4.6 Similarity</h2>
+<p><code>POST /api/v1/cv/similarity</code> ranks 2 to 8 phrases against the image with OpenCLIP ViT-B-32. Scores are cosine similarities, not probabilities. The package is optional because it installs PyTorch. In the current environment the page is present and the button stays disabled, with the reason that <code>open_clip_torch</code> is not installed. The API returns <code>MODEL_UNAVAILABLE</code> and does not estimate a score.</p>
+
+<h2>4.7 Compare</h2>
+<p>Compare places two results side by side: the original, a classical operation, detection, GrabCut or DeepLab, and OCR. OCR is included as the original image with the recognized text boxes drawn on it. A caption names the source and the measured time. The user can attach an observation tag, such as missed object, wrong class, false positive, weak segmentation, or an OCR error. The view does not decide a winner. The tag is stored as the user’s note, separate from model output, and can be passed into the report.</p>
+
+<h2>4.8 Grounded report</h2>
+<figure class="diagram">
+  <svg viewBox="0 0 720 176" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="How a grounded report is assembled">
+    <rect x="16" y="20" width="180" height="136" rx="8" fill="#f0fdfa" stroke="#0f766e"/>
+    <text x="106" y="46" text-anchor="middle" font-size="13" font-weight="700" fill="#0f172a">Allowed in</text>
+    <text x="106" y="74" text-anchor="middle" font-size="11" fill="#334155">Stored Image Lab run</text>
+    <text x="106" y="94" text-anchor="middle" font-size="11" fill="#334155">Stored detections</text>
+    <text x="106" y="114" text-anchor="middle" font-size="11" fill="#334155">Stored mask or OCR</text>
+    <text x="106" y="134" text-anchor="middle" font-size="11" fill="#334155">User note, labeled as such</text>
+    <path d="M196 88 H250" stroke="#0f766e" stroke-width="2"/>
+    <rect x="250" y="48" width="180" height="80" rx="8" fill="#ecfeff" stroke="#0e7490"/>
+    <text x="340" y="84" text-anchor="middle" font-size="13" font-weight="700" fill="#0f172a">Report builder</text>
+    <text x="340" y="106" text-anchor="middle" font-size="11" fill="#334155">observations + evidence</text>
+    <path d="M430 88 H484" stroke="#0e7490" stroke-width="2"/>
+    <rect x="484" y="20" width="216" height="56" rx="8" fill="#f8fafc" stroke="#334155"/>
+    <text x="592" y="44" text-anchor="middle" font-size="12" font-weight="700" fill="#0f172a">Grounded report</text>
+    <text x="592" y="62" text-anchor="middle" font-size="11" fill="#334155">always returned</text>
+    <rect x="484" y="92" width="216" height="64" rx="8" fill="#f5f3ff" stroke="#7c3aed"/>
+    <text x="592" y="116" text-anchor="middle" font-size="12" font-weight="700" fill="#0f172a">Optional narrative</text>
+    <text x="592" y="136" text-anchor="middle" font-size="11" fill="#334155">kept only if JSON is valid</text>
+  </svg>
+  <figcaption>Figure 7. The report is built from results the server already stored. A language-model paragraph is optional and can be thrown away.</figcaption>
+</figure>
+<p><code>POST /api/v1/ai/report</code> builds a summary from analyses already stored for that image id. The caller chooses which stored results to include: classical, detection, segmentation, OCR, similarity, and a previous vision answer. The report has a summary, observations, interpretations, limitations, and recommendations, plus an evidence object with counts and model names.</p>
+<p>If a language-model narrative is requested, the model must answer with JSON containing a <code>narrative</code> string. Invalid JSON, an empty narrative, or a narrative longer than 2000 characters is discarded. The measured observations stay. The narrative is labeled as generated from the stored results. A timeout or a rate limit leaves the grounded report in place and records that the narrative failed.</p>
+
+<h2>4.9 Export, samples, and timing</h2>
+<p>Export view downloads the picture currently on screen. Two built-in samples, Geometry and Text card, let the workbench be tried without a personal photo. The Geometry sample is shapes. The Text card sample contains readable words so OCR and Ask PixelPilot can be checked.</p>
+<p>Timing has three ideas. Processing time is the server work for that request. Inference time is the model call when there is one. Model-load time appears when the weights were loaded on that request rather than reused. A classical operation has no separate inference step, and the response says so.</p>
+
+<h1>5. Ask PixelPilot</h1>
+<p>Ask PixelPilot is the optional vision-language assistant. It answers a question about the uploaded image. It does not replace detection, segmentation, or OCR, and its answer is not a measurement.</p>
+
+<figure class="diagram">
+  <svg viewBox="0 0 720 188" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Ask PixelPilot request path">
+    <g font-size="12" fill="#0f172a" text-anchor="middle">
+      <rect x="16" y="24" width="120" height="52" rx="8" fill="#f5f3ff" stroke="#7c3aed"/>
+      <text x="76" y="46">User question</text>
+      <text x="76" y="64" font-size="10" fill="#475569">about this image</text>
+      <rect x="168" y="24" width="130" height="52" rx="8" fill="#f8fafc" stroke="#334155"/>
+      <text x="233" y="46">API prepares JPEG</text>
+      <text x="233" y="64" font-size="10" fill="#475569">longest side 768</text>
+      <rect x="330" y="24" width="130" height="52" rx="8" fill="#f5f3ff" stroke="#7c3aed"/>
+      <text x="395" y="46">Groq vision model</text>
+      <text x="395" y="64" font-size="10" fill="#475569">qwen/qwen3.8-27b</text>
+      <rect x="492" y="24" width="210" height="52" rx="8" fill="#faf5ff" stroke="#7c3aed"/>
+      <text x="597" y="46">Answer, verified false</text>
+      <text x="597" y="64" font-size="10" fill="#475569">stored as interpretation</text>
+    </g>
+    <path d="M136 50 H168 M298 50 H330 M460 50 H492" stroke="#7c3aed" stroke-width="1.6"/>
+    <rect x="16" y="104" width="686" height="62" rx="8" fill="#f8fafc" stroke="#cbd5e1"/>
+    <text x="360" y="128" text-anchor="middle" font-size="12" font-weight="700" fill="#0f172a">Not used as a measurement</text>
+    <text x="360" y="150" text-anchor="middle" font-size="11" fill="#334155">OCR keeps its own text boxes. Detection keeps its own object boxes. A rate limit returns an error, not a guessed answer.</text>
+  </svg>
+  <figcaption>Figure 6. Ask PixelPilot sends a smaller JPEG to Groq. The sentence that comes back is labeled unverified.</figcaption>
+</figure>
+<h2>What the user sees</h2>
+<ul>
+  <li>The button sits in the header beside Export view, so it does not cover the picture or the stat cards.</li>
+  <li>The chat opens as a floating panel, 380 by 520 pixels, capped by the viewport. The thread scrolls inside that fixed size. The panel can be dragged.</li>
+  <li>Suggested prompts ask what is visible, whether text is readable, and what the lighting and background look like.</li>
+  <li>Keyboard shortcut: Ctrl+K or Cmd+K toggles the chat. The Assistant item in the sidebar opens the same panel.</li>
+  <li>Sending is disabled until an image is loaded and the vision provider is configured.</li>
+</ul>
+
+<h2>What the server does</h2>
+<ol>
+  <li><code>POST /api/v1/ai/vision-question</code> receives the image id and the question.</li>
+  <li>The stored BGR image is encoded as JPEG. If the longest side is above 768 pixels, it is reduced first. Quality is 85.</li>
+  <li>The JPEG is sent as a data URL to an OpenAI-compatible chat endpoint. The current configuration uses Groq at <code>https://api.groq.com/openai/v1</code> and the vision model <code>qwen/qwen3.8-27b</code>.</li>
+  <li>The system instruction tells the model to describe only what is visible, to say when text is unreadable, and not to invent measurements or hidden details.</li>
+  <li>The answer is returned with <code>verified: false</code> and a note that a person has not independently checked it. If the image was reduced, the note says the longest side sent to the provider is 768 pixels.</li>
+  <li>The answer is stored on the image so a later report can include it as an interpretation, still unverified.</li>
+</ol>
+<div class="callout">
+  <strong>Why this still counts as computer-vision knowledge.</strong>
+  The project keeps a generated description in a different box from a detector box, an OCR string, and a pixel class. That separation is the point. A vision-language model can be fluent and wrong. PixelPilot shows the answer, labels it unverified, and leaves the measured results intact.
+</div>
+<p>The free Groq plan rate-limits requests. If the provider asks for a short wait, the API retries once. If the limit is longer, the user sees a message that names the wait. No text is invented to fill the gap. Report narratives use a second model, <code>openai/gpt-oss-120b</code>, on the same provider. That call sees the stored JSON, not the raw image.</p>
+
+<h1>6. API reference</h1>
+<p>All routes are under <code>/api/v1</code>. Interactive docs are at <code>http://127.0.0.1:8000/docs</code> while the API is running. The browser uses <code>NEXT_PUBLIC_API_URL</code>, which defaults to <code>http://localhost:8000</code>.</p>
+
+<table>
+  <tr><th>Method and path</th><th>Role</th></tr>
+  <tr><td><code>GET /health</code></td><td>Process is up. Returns status, service name, and version.</td></tr>
+  <tr><td><code>GET /capabilities</code></td><td>Which tools are available: classical operations, detector, GrabCut, DeepLab, OCR, similarity, vision model, and language model. A missing optional tool includes a reason.</td></tr>
+  <tr><td><code>POST /images/inspect</code></td><td>Multipart file upload. Returns the image id and metadata.</td></tr>
+  <tr><td><code>POST /images/{image_id}/pixels</code></td><td>JSON body <code>x</code>, <code>y</code>, and optional <code>width</code> and <code>height</code>. Returns BGR and RGB or gray.</td></tr>
+  <tr><td><code>DELETE /images/{image_id}</code></td><td>Drops that image from memory.</td></tr>
+  <tr><td><code>POST /cv/preprocess</code></td><td>Form fields <code>image_id</code>, <code>operation</code>, and <code>parameters</code> as JSON. Returns the result image.</td></tr>
+  <tr><td><code>POST /cv/detect</code></td><td>Form fields <code>image_id</code>, <code>confidence</code>, and <code>max_results</code>. Returns boxes, labels, confidences, and an annotated image.</td></tr>
+  <tr><td><code>POST /cv/segment</code></td><td>Form fields <code>image_id</code>, <code>method</code> (<code>grabcut</code> or <code>deeplab</code>), and <code>parameters</code>. Returns a mask, an overlay, and class counts.</td></tr>
+  <tr><td><code>POST /cv/ocr</code></td><td>Form field <code>image_id</code>. Returns text regions and the joined string.</td></tr>
+  <tr><td><code>POST /cv/similarity</code></td><td>Form fields <code>image_id</code> and <code>candidates</code> as a JSON list of phrases. Optional. Returns ranked cosine scores when OpenCLIP is installed.</td></tr>
+  <tr><td><code>POST /ai/vision-question</code></td><td>Form fields <code>image_id</code> and <code>question</code>. Ask PixelPilot. Returns an unverified answer.</td></tr>
+  <tr><td><code>POST /ai/report</code></td><td>JSON body with <code>image_id</code> and include flags. Returns the grounded report and, when requested and valid, a narrative.</td></tr>
+</table>
+
+<h2>Report body</h2>
+<p>The report request allows only known fields. A useful body looks like this:</p>
+<p class="mono">{ "image_id": "img_0123456789abcdef", "include_classical": true, "include_detection": true, "include_ocr": true, "use_llm": false, "user_observation": "The edge looks broken." }</p>
+<p><code>use_llm</code> asks for the narrative. <code>user_observation</code> is capped at 500 characters and is kept as the user’s note. It is not rewritten into the measured observations.</p>
+
+<h2>Models in this version</h2>
+<table>
+  <tr><th>Task</th><th>Implementation</th><th>Runs where</th></tr>
+  <tr><td>Classical vision</td><td>OpenCV</td><td>Local CPU</td></tr>
+  <tr><td>Object detection</td><td>MediaPipe EfficientDet Lite0 int8</td><td>Local CPU</td></tr>
+  <tr><td>Semantic segmentation</td><td>MediaPipe DeepLabV3, Pascal VOC</td><td>Local CPU</td></tr>
+  <tr><td>Foreground segmentation</td><td>OpenCV GrabCut</td><td>Local CPU</td></tr>
+  <tr><td>OCR</td><td>RapidOCR ONNX Runtime</td><td>Local CPU</td></tr>
+  <tr><td>Image-text similarity</td><td>OpenCLIP ViT-B-32, optional</td><td>Local, only if installed</td></tr>
+  <tr><td>Ask PixelPilot</td><td>qwen/qwen3.8-27b through Groq</td><td>Hosted, image leaves the machine</td></tr>
+  <tr><td>Report narrative</td><td>openai/gpt-oss-120b through Groq</td><td>Hosted, stored JSON only</td></tr>
+</table>
+<p>MediaPipe and RapidOCR weights stay under their upstream licenses. Any image sent to Ask PixelPilot is sent to the configured provider. Detection, segmentation, OCR, and Image Lab do not leave the machine.</p>
+
+<h1>7. How this shows computer-vision knowledge</h1>
+<p>A strong way to present the project is to walk one image through the tasks and say what each output is allowed to mean.</p>
+<ol>
+  <li><strong>Representation.</strong> Show a pixel. Explain BGR versus RGB, why EXIF orientation is applied first, and why coordinates are absolute pixels with an exclusive far edge.</li>
+  <li><strong>Classical pipeline.</strong> Blur, then threshold or Canny, then morphology or contours. Change one parameter and show that the result image changes while the stored original does not.</li>
+  <li><strong>Detection.</strong> Point at a box, the class name, and the confidence. If the list is empty, say the small detector finished and found nothing. Do not quote an mAP.</li>
+  <li><strong>Segmentation.</strong> Contrast GrabCut, which separates foreground inside a rectangle, with DeepLab, which paints Pascal VOC classes and merges instances of the same class.</li>
+  <li><strong>OCR versus a language model.</strong> Read the OCR string, then ask PixelPilot the same question. Point out that one is a recognizer output and the other is an unverified generation.</li>
+  <li><strong>Evaluation hygiene.</strong> Open the report and show that it repeats stored counts. Mention that a caller cannot attach a detection the server did not compute.</li>
+  <li><strong>Operations.</strong> Mention measured latency, the in-memory session, the one-worker constraint, and the rate limit on the free vision API.</li>
+</ol>
+<p>That sequence shows image formation, classical operators, a detector, two kinds of segmentation, text recognition, and the boundary between a measurement and a generated sentence. It also shows the judgment to leave a number out when it was not measured.</p>
+
+<h1>8. How to run it</h1>
+<p>Use Python 3.12 and Node 22. From the project folder, start the API first:</p>
+<p class="mono">cd backend<br />
+.\.venv\Scripts\python.exe -m uvicorn app.main:app --port 8000</p>
+<p>Then the interface:</p>
+<p class="mono">cd frontend<br />
+npm run dev</p>
+<p>Open <code>http://localhost:3000</code>. The API health check is <code>http://127.0.0.1:8000/api/v1/health</code>. Backend tests are <code>python -m pytest</code> inside <code>backend</code>. They cover rejected uploads, pixel order, classical operations, preservation of the original, GrabCut, grounded reports, and the detector and DeepLab contracts when the model files are present. They also check that a missing model or a missing vision key returns an error and no invented prediction.</p>
+<p class="small">PixelPilot AI is a vision workbench for inspection and demonstration. It is not a medical, forensic, or safety-critical system.</p>
+
+<h1>9. Detailed API contracts and examples</h1>
+<p>This section describes the shape of the important requests and responses. The exact image payloads are base64 strings and are intentionally shortened here. Image-returning APIs use a <code>media_type</code> and a base64 property so the browser can construct a data URL without storing generated files on the API server.</p>
+
+<h2>9.1 Inspect an image</h2>
+<p><strong>Route:</strong> <code>POST /api/v1/images/inspect</code>. Send multipart form-data with a field named <code>file</code>. This endpoint creates the temporary image record.</p>
+<p class="mono">{<br />
+&nbsp;&nbsp;"image_id": "img_0123456789abcdef",<br />
+&nbsp;&nbsp;"filename": "street.jpg",<br />
+&nbsp;&nbsp;"file_format": "JPEG", "file_size_bytes": 382991,<br />
+&nbsp;&nbsp;"width": 1920, "height": 1080, "channels": 3,<br />
+&nbsp;&nbsp;"color_space": "BGR", "dtype": "uint8",<br />
+&nbsp;&nbsp;"alpha_discarded": false, "processing_time_ms": 17.4,<br />
+&nbsp;&nbsp;"request_id": "..."<br />
+}</p>
+<p><strong>Why the fields matter:</strong> dimensions, channel count, dtype, and color order are factual properties of the decoded array. They are the first information a CV pipeline needs before it chooses an operation. The app reports alpha removal rather than silently pretending a four-channel PNG has three channels.</p>
+
+<h2>9.2 Query pixels</h2>
+<p><strong>Route:</strong> <code>POST /api/v1/images/{image_id}/pixels</code>. Body:</p>
+<p class="mono">{ "x": 240, "y": 180, "width": 1, "height": 1 }</p>
+<p>For a BGR image, one returned pixel has this shape:</p>
+<p class="mono">{ "x": 240, "y": 180, "bgr": [42, 115, 202], "rgb": [202, 115, 42] }</p>
+<p>The conversion is intentionally visible. OpenCV convention is BGR; HTML display and most human explanations use RGB. Showing both makes it harder to make a silent channel-order mistake.</p>
+
+<h2>9.3 Preprocess an image</h2>
+<p><strong>Route:</strong> <code>POST /api/v1/cv/preprocess</code>. Form fields are <code>image_id</code>, <code>operation</code>, and <code>parameters</code> as a JSON string. Example global threshold:</p>
+<p class="mono">image_id=img_0123456789abcdef<br />
+operation=threshold<br />
+parameters={"method":"global","threshold":135,"max_value":255}</p>
+<p>A successful response identifies the operation, repeats validated parameters, returns the generated image, and supplies timing:</p>
+<p class="mono">{<br />
+&nbsp;&nbsp;"operation": "threshold", "parameters": {"method":"global","threshold":135,"max_value":255},<br />
+&nbsp;&nbsp;"media_type": "image/png", "image_base64": "iVBOR...",<br />
+&nbsp;&nbsp;"image_width": 1920, "image_height": 1080,<br />
+&nbsp;&nbsp;"timing": {"processing_time_ms": 4.8, "inference_time_ms": null,<br />
+&nbsp;&nbsp;&nbsp;&nbsp;"model_load_time_ms": null, "inference_scope": "not_applicable"},<br />
+&nbsp;&nbsp;"request_id": "..."<br />
+}</p>
+<p>Parameter validation is part of the feature. Gaussian and morphology kernels must be odd. Canny's low threshold must be lower than its high threshold. Adaptive threshold block size must be odd and at least 3. Resize requires a width or height. Crop origin cannot be negative. These rules avoid ambiguous or invalid OpenCV calls before they reach the library.</p>
+
+<h2>9.4 Run detection</h2>
+<p><strong>Route:</strong> <code>POST /api/v1/cv/detect</code>. Form fields:</p>
+<p class="mono">image_id=img_0123456789abcdef<br />
+confidence=0.25<br />
+max_results=20</p>
+<p>Representative response:</p>
+<p class="mono">{<br />
+&nbsp;&nbsp;"model": "mediapipe-efficientdet-lite0-int8", "task": "object-detection",<br />
+&nbsp;&nbsp;"image_width": 1920, "image_height": 1080, "detection_count": 1,<br />
+&nbsp;&nbsp;"detections": [{<br />
+&nbsp;&nbsp;&nbsp;&nbsp;"class_id": 0, "label": "person", "confidence": 0.8412,<br />
+&nbsp;&nbsp;&nbsp;&nbsp;"bbox": {"x1": 503, "y1": 174, "x2": 798, "y2": 1042}<br />
+&nbsp;&nbsp;}],<br />
+&nbsp;&nbsp;"media_type": "image/png", "annotated_image_base64": "iVBOR...",<br />
+&nbsp;&nbsp;"timing": {"processing_time_ms": 103.2, "inference_time_ms": 94.8,<br />
+&nbsp;&nbsp;&nbsp;&nbsp;"model_load_time_ms": null, "inference_scope": "measured"}<br />
+}</p>
+<p>A list with <code>"detection_count": 0</code> is equally valid. It means no result survived the requested confidence cutoff. The user-facing average confidence is computed only from returned boxes. It is not a confidence in the whole image and it is not accuracy.</p>
+
+<h2>9.5 Run segmentation</h2>
+<p><strong>Route:</strong> <code>POST /api/v1/cv/segment</code>. Example GrabCut parameters:</p>
+<p class="mono">image_id=img_0123456789abcdef<br />
+method=grabcut<br />
+parameters={"x":100,"y":80,"width":800,"height":700,"iterations":3}</p>
+<p>Example DeepLab parameters:</p>
+<p class="mono">image_id=img_0123456789abcdef<br />
+method=deeplab<br />
+parameters={}</p>
+<p>Both return a PNG mask and a PNG overlay. GrabCut returns foreground metadata. DeepLab returns a list of classes that occurred, such as <code>{"label":"person","pixel_count":38342}</code>. The class count is a mask area, not an object count.</p>
+
+<h2>9.6 Run OCR</h2>
+<p><strong>Route:</strong> <code>POST /api/v1/cv/ocr</code>. Form field <code>image_id</code>. The shape is:</p>
+<p class="mono">{<br />
+&nbsp;&nbsp;"model": "rapidocr-onnxruntime", "region_count": 3,<br />
+&nbsp;&nbsp;"full_text": "INVOICE 204\\nTOTAL 18\\nPixelPilot sample",<br />
+&nbsp;&nbsp;"text_regions": [{<br />
+&nbsp;&nbsp;&nbsp;&nbsp;"text": "INVOICE 204", "confidence": 0.99,<br />
+&nbsp;&nbsp;&nbsp;&nbsp;"bbox": {"x1": 70, "y1": 72, "x2": 535, "y2": 151}<br />
+&nbsp;&nbsp;}],<br />
+&nbsp;&nbsp;"timing": {"processing_time_ms": 142.3, "inference_time_ms": 141.5,<br />
+&nbsp;&nbsp;&nbsp;&nbsp;"model_load_time_ms": null, "inference_scope": "measured"}<br />
+}</p>
+<p>Confidence can be null when an OCR engine cannot provide one. The document must not treat an OCR confidence as a probability that every character is correct.</p>
+
+<h2>9.7 Ask PixelPilot and the report</h2>
+<p><strong>Vision question:</strong> <code>POST /api/v1/ai/vision-question</code> with form fields <code>image_id</code> and <code>question</code>. The response contains <code>model</code>, <code>answer</code>, <code>verified: false</code>, <code>resized_for_provider</code>, a note, and timing. The answer is capped at 4000 characters.</p>
+<p><strong>Report:</strong> <code>POST /api/v1/ai/report</code> with a JSON body. The response includes <code>report</code>, <code>evidence</code>, <code>llm_status</code>, <code>llm_notice</code>, and optional <code>llm_narrative</code>. The deterministic report is always the main output. The narrative is an optional supplement.</p>
+
+<h1>10. Front-end behavior and user experience</h1>
+<p>The front end is a Next.js 15 App Router application written in TypeScript and React. It uses a single workspace state provider rather than a separate page for every feature. This matters because all modes operate on the same selected image and share the same analysis history.</p>
+
+<h2>10.1 Workspace state</h2>
+<table>
+  <tr><th>State</th><th>Purpose</th><th>What resets it</th></tr>
+  <tr><td>Metadata and preview URL</td><td>The active image id, name, dimensions, and browser preview.</td><td>Replace image or Clear workspace.</td></tr>
+  <tr><td>Classical result</td><td>Most recent Image Lab operation and its generated image.</td><td>Replace image or Clear workspace.</td></tr>
+  <tr><td>Detection result</td><td>Boxes, selected box, annotated image, and display mode.</td><td>Replace image or Clear workspace.</td></tr>
+  <tr><td>Segmentation result</td><td>GrabCut or DeepLab mask/overlay and display choice.</td><td>Replace image or Clear workspace.</td></tr>
+  <tr><td>OCR result</td><td>Recognized regions and selected text region.</td><td>Replace image or Clear workspace.</td></tr>
+  <tr><td>History</td><td>Up to 12 renderable results for Compare: classical images, detection, segmentation, and OCR boxes.</td><td>Replace image or Clear workspace.</td></tr>
+  <tr><td>Activity</td><td>Busy state, label, request id, processing time, and request time.</td><td>Updated for every action.</td></tr>
+</table>
+
+<h2>10.2 Main controls</h2>
+<ul>
+  <li><strong>Sidebar:</strong> groups Workspace modes and Interpret modes. The Assistant entry opens the floating chat; it does not turn the right-side control panel into a small chat form.</li>
+  <li><strong>Samples:</strong> Geometry and Text card load real files from <code>frontend/public/samples</code> through the same upload path as a user file.</li>
+  <li><strong>Stage:</strong> fit and actual-size choices affect the display only. Detection and OCR SVG overlays use the image's natural dimensions, so boxes scale with the picture.</li>
+  <li><strong>Stat cards:</strong> show a raw detection count, mean returned box confidence, latest activity latency, and number of capabilities available on this server. A count of zero is visibly different from a run that has not happened.</li>
+  <li><strong>Export:</strong> downloads the currently visible picture. It can export an original, a classical result, a rendered detection result, a segmentation view, or the stage currently shown.</li>
+  <li><strong>Compare:</strong> retains the source and timing for each history item. OCR enters history as the original image plus its boxes, rather than a fake generated image.</li>
+</ul>
+
+<h2>10.3 Ask PixelPilot interaction details</h2>
+<p>The chat is deliberately fixed size: 380 pixels wide and 520 pixels high when the viewport permits. On smaller screens it is capped to leave margins. Header and composer do not shrink; the conversation region has <code>overflow-y: auto</code>. Prompt chips scroll horizontally instead of wrapping into a tall panel. New messages scroll the thread to the newest answer. The panel is draggable through pointer events, constrained to the viewport, and its drag handling ignores text controls and buttons.</p>
+<p>The header has an Ask PixelPilot action beside Export. It replaces the old viewport-fixed action, which could cover a card or the image. Ctrl+K / Cmd+K and the shortcut key 7 also open the assistant while focus is outside a form field.</p>
+
+<h2>10.4 Accessibility and honest empty states</h2>
+<p>Controls have visible labels, buttons have names, and input modes expose their current values. Disabled actions state why they cannot run: no image, model unavailable, or a request in progress. The interface describes empty completed output correctly. For example, a detector run returning no objects says “Run finished with no boxes,” while before any detector call it says “Run detection.” This distinction avoids telling a user that a completed result has not yet happened.</p>
+
+<h1>11. Backend internals</h1>
+<h2>11.1 FastAPI application structure</h2>
+<p><code>app/main.py</code> creates the API, enables CORS for the configured front-end origin, adds request-id middleware, and registers one handler for expected project errors and one fallback handler for unexpected errors. The request-id middleware accepts only an 8 to 80 character alphanumeric, underscore, or hyphen id from an incoming header; otherwise it creates a UUID. It places the id in the response header and response body.</p>
+<p>The route layer does request parsing and response formatting. It delegates image lookup to <code>api/deps.py</code> and delegates work to services. Services do not know whether a request came from a browser or the API docs.</p>
+
+<h2>11.2 In-memory image store</h2>
+<p>The store is a thread-safe dictionary protected by a lock. An <code>ImageRecord</code> holds the image id, contiguous NumPy array, original file format and size, color space, alpha-removal flag, creation time, and an analyses dictionary. Before a new image is inserted, expired entries are removed. If the maximum number is exceeded, the oldest records are removed. Fetching an id also checks the expiry time.</p>
+<p>The design is useful for a small demo because it avoids file cleanup and avoids persisting personal images. Its tradeoff is intentional: after a restart, an id is gone. It is not the right design for a multi-worker production system or a long-lived user gallery.</p>
+
+<h2>11.3 Provider adapter</h2>
+<p>The provider adapter is written against the OpenAI-compatible <code>/chat/completions</code> contract. Configuration supplies an API key, base URL, vision model name, language model name, and timeout. Content may be returned as a string or a list of content parts, so the adapter normalizes both. It considers an empty final message invalid.</p>
+<p>The free provider can return HTTP 429. The adapter reads <code>retry-after</code>, <code>x-ratelimit-reset-tokens</code>, or <code>x-ratelimit-reset-requests</code> when available. If a short reset is indicated, it retries once. Otherwise it produces <code>PROVIDER_RATE_LIMIT</code> with a human-readable wait message. It does not manufacture a model answer.</p>
+
+<h2>11.4 Configuration</h2>
+<table>
+  <tr><th>Environment variable</th><th>Purpose</th><th>Current example value</th></tr>
+  <tr><td><code>MAX_UPLOAD_BYTES</code></td><td>Maximum source file size.</td><td>10485760</td></tr>
+  <tr><td><code>CORS_ORIGINS</code></td><td>Allowed browser origin or origins.</td><td>http://localhost:3000</td></tr>
+  <tr><td><code>DEVICE</code></td><td>Model device setting where relevant.</td><td>cpu</td></tr>
+  <tr><td><code>OPENAI_API_KEY</code></td><td>Server-only provider credential.</td><td>Empty in the example file.</td></tr>
+  <tr><td><code>OPENAI_BASE_URL</code></td><td>OpenAI-compatible provider endpoint.</td><td>https://api.groq.com/openai/v1</td></tr>
+  <tr><td><code>VLM_MODEL</code></td><td>Model for Ask PixelPilot.</td><td>qwen/qwen3.8-27b</td></tr>
+  <tr><td><code>LLM_MODEL</code></td><td>Model for an optional report narrative.</td><td>openai/gpt-oss-120b</td></tr>
+  <tr><td><code>PROVIDER_TIMEOUT_SECONDS</code></td><td>External model timeout.</td><td>60</td></tr>
+</table>
+<p>Settings load when the Python process starts. Updating <code>backend/.env</code> requires restarting Uvicorn. The secret file is ignored by git. A front-end environment variable has the <code>NEXT_PUBLIC_</code> prefix and therefore must never contain the provider key.</p>
+
+<h1>12. Security, privacy, and reliability</h1>
+<h2>12.1 Current protections</h2>
+<ul>
+  <li>Allowed image formats are checked by extension and file signature before decode.</li>
+  <li>File size, maximum side, and total pixel count are bounded.</li>
+  <li>Pydantic models use <code>extra="forbid"</code>, so unknown request parameters are rejected.</li>
+  <li>Every image id has a constrained format, and missing or expired ids return a clear error.</li>
+  <li>Stored source images are memory-only and expire automatically.</li>
+  <li>The provider key stays in backend configuration; it is not exposed to the browser.</li>
+  <li>Errors return a stable, safe message and request id. The server logs the underlying exception.</li>
+  <li>The report reads server-held analyses instead of trusting client-provided detections.</li>
+</ul>
+
+<h2>12.2 Privacy boundary</h2>
+<p>Image Lab, detection, GrabCut, DeepLab, and RapidOCR run on the API machine. Ask PixelPilot sends a downscaled JPEG to the configured hosted vision provider. The optional language-model narrative sends the stored report JSON and evidence, not the raw image. This should be said plainly in a demo: a user should not send sensitive images to Ask PixelPilot unless that provider is acceptable for the use case.</p>
+
+<h2>12.3 Production work still needed</h2>
+<p>The application is ready for a portfolio demonstration or a small controlled deployment, but a public deployment needs extra operational work:</p>
+<ul>
+  <li>Use HTTPS and set <code>CORS_ORIGINS</code> to the actual front-end domain.</li>
+  <li>Place the API behind a reverse proxy with upload limits, request limits, and structured logs.</li>
+  <li>Add authentication and user-level quotas before exposing expensive provider calls to strangers.</li>
+  <li>Use an object store or a database if image sessions must survive restart; use a shared store or sticky session if multiple workers are required.</li>
+  <li>Set an allowed-hosts policy, security headers, monitoring, backups for persistent data, and error tracking.</li>
+  <li>Pin and scan dependency versions, review model licenses, and add an abuse policy for hosted model use.</li>
+</ul>
+<div class="callout"><strong>Important deployment rule:</strong> the current in-memory design requires one API worker. Adding <code>--workers 4</code> without changing storage will cause random “image not found” behavior because each worker has its own dictionary.</div>
+
+<h1>13. Testing and quality checks</h1>
+<p>Backend tests are written with pytest and FastAPI's test client. They focus on contracts that should remain true even if the user interface changes.</p>
+<table>
+  <tr><th>Area</th><th>What is checked</th></tr>
+  <tr><td>Upload validation</td><td>Unsupported files, mismatched content, oversize inputs, and decode failures use the expected error path.</td></tr>
+  <tr><td>Pixel data</td><td>Color order is correct: BGR in the OpenCV representation and RGB for display.</td></tr>
+  <tr><td>Classical operations</td><td>Operations return valid images and do not overwrite the stored original.</td></tr>
+  <tr><td>Geometry and segmentation</td><td>GrabCut returns a valid mask. Detector and DeepLab response contracts are checked when weights exist.</td></tr>
+  <tr><td>Grounded reports</td><td>Unexpected report fields are rejected, and a report cannot include a caller-invented detection.</td></tr>
+  <tr><td>Optional features</td><td>Missing detector, similarity dependency, or provider configuration reports unavailability rather than returning fake output.</td></tr>
+  <tr><td>Provider helper</td><td>Rate-limit reset durations are parsed correctly for retry decisions.</td></tr>
+</table>
+<p>Manual browser checks used during development include: loading the Text card, running a grayscale operation, detection with an intentionally zero-box result, OCR with visible text regions, GrabCut overlay, a grounded report, Compare with OCR boxes, and a fixed-size scrolling Ask PixelPilot panel. The current user-facing behavior has been checked for a desktop viewport and a narrow viewport.</p>
+
+<h1>14. Suggested live demonstration script</h1>
+<p>This is a concise but technical way to present the project in an interview or project review.</p>
+<ol>
+  <li><strong>Start at Overview.</strong> “This upload is decoded into a BGR NumPy array. Clicking a pixel shows BGR for OpenCV and RGB for display. EXIF orientation is normalized first, so these coordinates are reliable.”</li>
+  <li><strong>Open Image Lab.</strong> “This is the classical CV section. I can blur before thresholding, create a Canny edge map, then clean it with morphological opening or closing. The original remains immutable.”</li>
+  <li><strong>Open Detection.</strong> “EfficientDet Lite0 returns labels, confidences, and absolute pixel boxes. If it returns zero boxes, the UI says the run completed with no boxes. I do not call that a failed model.”</li>
+  <li><strong>Open Segmentation.</strong> “GrabCut is foreground extraction in a rectangle. DeepLab assigns a class to every pixel from the Pascal VOC label space. They look similar in the UI but solve different problems.”</li>
+  <li><strong>Open OCR.</strong> “RapidOCR returns text regions and their coordinates. This is the engine output, so it remains separate from a generative interpretation.”</li>
+  <li><strong>Open Compare.</strong> “I can compare original, image processing results, detector output, segmentation, and OCR overlays. The tag is a human observation and stays separate from model output.”</li>
+  <li><strong>Open Ask PixelPilot.</strong> “This is optional hosted vision-language analysis. The server resizes and sends a JPEG to Groq, receives a response, and labels it unverified. It has rate-limit handling, and the answer is never used as a detector result.”</li>
+  <li><strong>Open Report.</strong> “The report starts from server-stored observations. A language model may add a narrative only from this stored JSON. Invalid generated JSON is discarded, so the measured report remains safe.”</li>
+</ol>
+
+<h1>15. Resume and portfolio positioning</h1>
+<p>A truthful description is stronger than saying “built an AI app.” The strongest evidence is the combination of computer-vision concepts and product engineering.</p>
+<h2>Resume bullets</h2>
+<ul>
+  <li>Built PixelPilot AI, a full-stack computer-vision workbench using Next.js, FastAPI, OpenCV, MediaPipe, and RapidOCR for image inspection, classical processing, detection, segmentation, OCR, comparison, and reporting.</li>
+  <li>Implemented a validated image pipeline for JPEG, PNG, and WebP with EXIF normalization, bounded decoding, BGR/RGB pixel inspection, temporary in-memory sessions, and request-id-based error responses.</li>
+  <li>Integrated EfficientDet Lite0 object detection, DeepLabV3 semantic segmentation, GrabCut foreground extraction, and OCR with rendered overlays, measured latency, and explicit model limitations.</li>
+  <li>Designed a grounded reporting flow that consumes only server-stored analyses; optional vision and language-model outputs are labeled unverified or discarded when invalid.</li>
+  <li>Added an OpenAI-compatible vision assistant with image resizing, provider timeout handling, free-tier rate-limit retry logic, and a fixed-size scrollable floating chat interface.</li>
+</ul>
+<h2>What to avoid saying</h2>
+<ul>
+  <li>Do not say the application was trained on a dataset or achieved a particular mAP; neither is true in this repository.</li>
+  <li>Do not call similarity scores probabilities.</li>
+  <li>Do not describe Ask PixelPilot as an OCR replacement or a verified source of image facts.</li>
+  <li>Do not describe DeepLab as instance segmentation.</li>
+  <li>Do not say images are permanently stored; they are temporary process-memory records.</li>
+</ul>
+
+</body>
+</html>
