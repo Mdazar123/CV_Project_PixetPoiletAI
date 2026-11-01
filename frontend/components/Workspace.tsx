@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ApiError,
   askVision,
@@ -67,6 +67,9 @@ export function Workspace() {
   const [history, setHistory] = useState<HistoryItem[]>([]);
   const [compareLeft, setCompareLeft] = useState("original");
   const [compareRight, setCompareRight] = useState("");
+  const sourceFileRef = useRef<File | null>(null);
+  const metadataRef = useRef<ImageMetadata | null>(null);
+  metadataRef.current = metadata;
   const [observation, setObservation] = useState("");
   const [failureTag, setFailureTag] = useState("");
   const [zoom, setZoom] = useState<"fit" | "actual">("fit");
@@ -159,6 +162,21 @@ export function Workspace() {
     }
   }
 
+  async function callWithImage<T>(action: (imageId: string) => Promise<T>) {
+    const currentId = metadataRef.current?.image_id;
+    if (!currentId) throw new ApiError("IMAGE_NOT_FOUND", "Upload an image first.");
+    try {
+      return await action(currentId);
+    } catch (error) {
+      const file = sourceFileRef.current;
+      if (!(error instanceof ApiError) || error.code !== "IMAGE_NOT_FOUND" || !file) throw error;
+      const inspected = await inspectImage(file);
+      metadataRef.current = inspected;
+      setMetadata(inspected);
+      return action(inspected.image_id);
+    }
+  }
+
   function remember(item: HistoryItem) {
     setHistory((current) => [item, ...current.filter((entry) => entry.title !== item.title)].slice(0, 12));
     setCompareRight(item.id);
@@ -175,10 +193,13 @@ export function Workspace() {
     const localUrl = URL.createObjectURL(file);
     const previousId = metadata?.image_id;
     const previousUrl = previewUrl;
+    const previousFile = sourceFileRef.current;
+    sourceFileRef.current = file;
     try {
       const inspected = await inspectImage(file);
       if (previousUrl) URL.revokeObjectURL(previousUrl);
       if (previousId) void deleteImage(previousId).catch(() => undefined);
+      metadataRef.current = inspected;
       setPreviewUrl(localUrl);
       setMetadata(inspected);
       setFileName(file.name);
@@ -197,6 +218,7 @@ export function Workspace() {
       });
       setMode("inspect");
     } catch (err) {
+      sourceFileRef.current = previousFile;
       URL.revokeObjectURL(localUrl);
       setError(err instanceof ApiError ? err.message : "The image could not be inspected.");
     } finally {
@@ -218,6 +240,8 @@ export function Workspace() {
     const currentId = metadata?.image_id;
     if (currentId) void deleteImage(currentId).catch(() => undefined);
     if (previewUrl) URL.revokeObjectURL(previewUrl);
+    sourceFileRef.current = null;
+    metadataRef.current = null;
     setPreviewUrl(null);
     setMetadata(null);
     setFileName(null);
@@ -229,7 +253,7 @@ export function Workspace() {
   async function readPixel(x: number, y: number) {
     if (!metadata) return;
     try {
-      setPixel(await readPixels(metadata.image_id, x, y));
+      setPixel(await callWithImage((imageId) => readPixels(imageId, x, y)));
       setError(null);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "The pixel could not be read.");
@@ -283,7 +307,9 @@ export function Workspace() {
     readPixel,
     async runClassical(operation, parameters) {
       if (!metadata) return;
-      const result = await execute(`Classical · ${operation}`, () => preprocess(metadata.image_id, operation, parameters));
+      const result = await execute(`Classical · ${operation}`, () =>
+        callWithImage((imageId) => preprocess(imageId, operation, parameters)),
+      );
       if (!result) return;
       setClassical(result);
       setShowOriginal(false);
@@ -299,7 +325,9 @@ export function Workspace() {
     },
     async runDetection(confidence, maxResults) {
       if (!metadata) return;
-      const result = await execute("Object detection", () => detect(metadata.image_id, confidence, maxResults));
+      const result = await execute("Object detection", () =>
+        callWithImage((imageId) => detect(imageId, confidence, maxResults)),
+      );
       if (!result) return;
       setDetection(result);
       setSelectedDetection(result.detections[0] ? 0 : null);
@@ -315,7 +343,9 @@ export function Workspace() {
     },
     async runSegmentation(method, parameters) {
       if (!metadata) return;
-      const result = await execute(`Segmentation · ${method}`, () => segment(metadata.image_id, method, parameters));
+      const result = await execute(`Segmentation · ${method}`, () =>
+        callWithImage((imageId) => segment(imageId, method, parameters)),
+      );
       if (!result) return;
       setSegmentation(result);
       setSegmentView("overlay");
@@ -331,7 +361,7 @@ export function Workspace() {
     },
     async runOcr() {
       if (!metadata) return;
-      const result = await execute("OCR", () => ocr(metadata.image_id));
+      const result = await execute("OCR", () => callWithImage((imageId) => ocr(imageId)));
       if (!result) return;
       setOcrResult(result);
       setSelectedOcr(result.text_regions[0] ? 0 : null);
@@ -360,31 +390,33 @@ export function Workspace() {
         .map((line) => line.trim())
         .filter(Boolean);
       await execute("Similarity", async () => {
-        const result = await similarity(metadata.image_id, candidates);
+        const result = await callWithImage((imageId) => similarity(imageId, candidates));
         setSimilarityResult(result);
         return result;
       });
     },
     async ask(question) {
       if (!metadata) return;
-      const result = await execute("Vision question", () => askVision(metadata.image_id, question));
+      const result = await execute("Vision question", () => callWithImage((imageId) => askVision(imageId, question)));
       if (result) setVision(result);
     },
     async generateReport(useLlm) {
       if (!metadata) return;
       const note = [failureTag ? `Tagged by user: ${failureTag}.` : "", observation.trim()].filter(Boolean).join(" ").slice(0, 500);
       const result = await execute("Report", () =>
-        createReport({
-          image_id: metadata.image_id,
-          include_classical: classical !== null,
-          include_detection: detection !== null,
-          include_segmentation: segmentation !== null,
-          include_ocr: ocrResult !== null,
-          include_similarity: similarityResult !== null,
-          include_vlm: vision !== null,
-          use_llm: useLlm,
-          user_observation: note || null,
-        }),
+        callWithImage((imageId) =>
+          createReport({
+            image_id: imageId,
+            include_classical: classical !== null,
+            include_detection: detection !== null,
+            include_segmentation: segmentation !== null,
+            include_ocr: ocrResult !== null,
+            include_similarity: similarityResult !== null,
+            include_vlm: vision !== null,
+            use_llm: useLlm,
+            user_observation: note || null,
+          }),
+        ),
       );
       if (result) setReportResult(result);
     },
